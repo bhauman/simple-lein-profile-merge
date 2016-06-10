@@ -5,6 +5,12 @@
 
 (def default-profiles [:base :system :user :provided :dev])
 
+;; Most of this code has been copied from the excellent Leiningen.
+;; It has been copied specifically from
+;; https://github.com/technomancy/leiningen/blob/master/leiningen-core/src/leiningen/core/project.clj
+
+;; All copyright issues need to refer back to Leiningen's Copyright
+
 (defn meta*
   "Returns the metadata of an object, or nil if the object cannot hold
   metadata."
