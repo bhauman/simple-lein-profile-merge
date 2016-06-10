@@ -1,4 +1,4 @@
-(defproject simple-lein-profile-merge "0.1.0-SNAPSHOT"
+(defproject simple-lein-profile-merge "0.1.0"
   :description
   "A simple Clojure library to help fetch configuration information from your project.clj without needing to load Leiningen."
   :url "https://github.com/bhauman/simple-lein-profile-merge"
@@ -7,4 +7,4 @@
   :scm {:name "git"
         :url "https://github.com/bhauman/simple-lein-profile-merge"
         :dir ".."}
-  :dependencies [[org.clojure/clojure "1.7.0"]])
+  :dependencies [[org.clojure/clojure "1.6.0"]])
