@@ -199,6 +199,7 @@
   (->> project
        :profiles
        vals
+       (filter map?)
        (concat (vals (user-global-profiles)))
        (mapcat keys)))
 
