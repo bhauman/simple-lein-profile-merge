@@ -140,10 +140,11 @@
               (simple-lein-merge project profile)
               (simple-lein-merge (meta project) (meta profile))))
           project
-          profiles))
+          (filter map? profiles)))
 
 (defn simple-lein-merge-profiles [left profiles includes]
-  (apply-profiles left (keep #(get profiles %) includes)))
+  (apply-profiles left
+                  (keep #(get profiles %) includes)))
 
 (defn user-global-profiles []
   (let [global-profiles (io/file (System/getProperty "user.home")
