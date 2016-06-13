@@ -5,6 +5,9 @@
 
 (def default-profiles [:base :system :user :provided :dev])
 
+(defn windows? []
+  (.contains (System/getProperty "os.name") "Windows"))
+
 ;; Most of this code has been copied from the excellent Leiningen.
 ;; It has been copied specifically from
 ;; https://github.com/technomancy/leiningen/blob/master/leiningen-core/src/leiningen/core/project.clj
@@ -146,15 +149,96 @@
   (apply-profiles left
                   (keep #(get profiles %) includes)))
 
-(defn user-global-profiles []
-  (let [global-profiles (io/file (System/getProperty "user.home")
+(defn read-edn-file [file-name]
+  (let [file (io/file file-name)]
+    (when-let [body (and (.exists file)
+                         (slurp file))]
+      (try
+        (read-string body)
+        (catch Throwable e
+          (println
+           (str "Failed to read file " (pr-str (str file))
+                " : "
+                (.getMessage ^Exception e))))))))
+
+(defn read-config-file [file-name]
+  (let [data (read-edn-file file-name)]
+    (if (map? data) data {})))
+
+(defn read-profile-d-file [file-name]
+  (let [data (read-edn-file file-name)]
+    (if ((some-fn map? vector?) data)
+      data
+      {})))
+
+#_(read-profile-d-file "/Users/bhauman/.lein/profiles.d/user.clj")
+
+#_(read-config-file (io/file (System/getProperty "user.home")
                                  ".lein"
-                                 "profiles.clj")]
-    (try
-      (when (.exists global-profiles)
-        (or (read-string (slurp global-profiles)) {}))
-      (catch Throwable e
-        {}))))
+                                 "profiles.clj"))
+
+;; gather profile info - without warnings
+
+(defn system-profiles []
+  (read-config-file
+   (if (windows?)
+     (io/file (System/getenv "AllUsersProfile") "Leiningen")
+     (io/file "/etc" "leiningen"))))
+
+(defn leiningen-home
+  "Return full path to the user's Leiningen home directory."
+  []
+  (let [lein-home (System/getenv "LEIN_HOME")
+        lein-home (or (and lein-home (io/file lein-home))
+                      (io/file (System/getProperty "user.home") ".lein"))]
+    (.getAbsolutePath (doto lein-home .mkdirs))))
+
+(defn user-global-profiles []
+  (->> (.listFiles (io/file (leiningen-home) "profiles.d"))
+       (filter #(-> % .getName (.endsWith ".clj")))
+       (mapv (fn [f]
+               [(->> f .getName (re-find #".+(?=\.clj)") keyword)
+                (read-profile-d-file f)]))
+       (into {})
+       (merge (read-config-file
+               (io/file (leiningen-home)
+                        "profiles.clj")))))
+
+(defn read-profiles
+  "read and merge all system profiles"
+  [project]
+  (merge (system-profiles)
+         (user-global-profiles)
+         (:profiles project)
+         (read-config-file (io/file (System/getProperty "user.dir")
+                                    "profiles.clj"))))
+
+
+(defn- lookup-profile*
+  "Lookup a profile in the given profiles map, warning when the profile doesn't
+  exist. Recurse whenever a keyword or vector is found, combining all profiles
+  in the vector."
+  [profiles profile]
+  (cond (keyword? profile)
+        (let [result (get profiles profile)]
+          (when-not (or result (#{:provided :dev :user :test :base :default
+                                  :production :system :repl}
+                                profile))
+            (binding [*out* *err*]
+              (println "Warning: profile" profile "not found.")))
+          (lookup-profile* profiles result))
+
+        (vector? profile)
+        (reduce simple-lein-merge {}
+                (map (partial lookup-profile* profiles) profile))
+        
+        :else (or profile {})))
+
+(defn pull-together-profiles [project]
+  (let [profs (read-profiles project)]
+    (into {} (map (juxt identity
+                        (partial lookup-profile* profs))
+                  (keys profs)))))
 
 (defn read-raw-project
   ([] (read-raw-project
@@ -174,18 +258,17 @@
      {})))
 
 (defn apply-lein-profiles [raw-project profile-names]
-  (let [profiles (:profiles raw-project)]
+  (let [profiles (pull-together-profiles raw-project)]
     (reduce
-     #(simple-lein-merge-profiles %1 %2 profile-names)
+     simple-lein-merge
      raw-project
-     [profiles
-      (user-global-profiles)])))
+     (map profiles profile-names))))
 
 (defn safe-apply-lein-profiles [project profiles]
   (try
     (apply-lein-profiles project profiles)
     (catch Throwable e
-      (println "Attempted to merge leiningen profiles into your project and failed with this error:")
+      (println "simple-lein-profile-merge: Attempted to merge leiningen profiles into your project and failed with this error:")
       
       (println (.getMessage e))
       (println "Falling back to project data without profiles merged.")
@@ -197,12 +280,21 @@
 (defn profile-top-level-keys
   "Given a project returns all the top level config entries mentioned in the profiles."
   [project]
-  (->> project
-       :profiles
+  (->> (pull-together-profiles project)
        vals
        (filter map?)
-       (concat (vals (user-global-profiles)))
-       (mapcat keys)))
+       (mapcat keys)
+       set))
+
+(defn safe-profile-top-level-keys [project]
+  (try
+    (profile-top-level-keys project)
+    (catch Throwable e
+      (println "simple-lein-profile-merge: Attempted to determine all the top level keys affected by profile merging.")
+      
+      (println (.getMessage e))
+      (println "Falling back to an empty set.")
+      #{})))
 
 (comment
 
