@@ -284,6 +284,7 @@
        vals
        (filter map?)
        (mapcat keys)
+       (filter keyword?)
        set))
 
 (defn safe-profile-top-level-keys [project]
