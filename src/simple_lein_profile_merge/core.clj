@@ -191,13 +191,13 @@
   (let [lein-home (System/getenv "LEIN_HOME")
         lein-home (or (and lein-home (io/file lein-home))
                       (io/file (System/getProperty "user.home") ".lein"))]
-    (.getAbsolutePath (doto lein-home .mkdirs))))
+    (.getAbsolutePath (doto ^java.io.File lein-home .mkdirs))))
 
 (defn user-global-profiles []
   (->> (.listFiles (io/file (leiningen-home) "profiles.d"))
-       (filter #(-> % .getName (.endsWith ".clj")))
+       (filter #(-> ^java.io.File % .getName (.endsWith ".clj")))
        (mapv (fn [f]
-               [(->> f .getName (re-find #".+(?=\.clj)") keyword)
+               [(->> ^java.io.File f .getName (re-find #".+(?=\.clj)") keyword)
                 (read-profile-d-file f)]))
        (into {})
        (merge (read-config-file
