@@ -1,5 +1,6 @@
 (ns simple-lein-profile-merge.core
   (:require
+   [clojure.walk :as walk]
    [clojure.set :as clset]
    [clojure.java.io :as io]))
 
@@ -240,7 +241,62 @@
                         (partial lookup-profile* profs))
                   (keys profs)))))
 
+;;; read raw project
+;; steal some more code from leiningen
+
+(defn- unquote-project
+  "Inside defproject forms, unquoting (~) allows for arbitrary evaluation."
+  [args]
+  (walk/walk (fn [item]
+               (cond (and (seq? item) (= `unquote (first item))) (second item)
+                     ;; needed if we want fn literals preserved
+                     (or (seq? item) (symbol? item)) (list 'quote item)
+                     :else (let [result (unquote-project item)]
+                             ;; clojure.walk strips metadata
+                             (if-let [m (meta item)]
+                               (with-meta result m)
+                               result))))
+             identity
+             args))
+
+(defn- argument-list->argument-map
+  [args]
+  (let [keys (map first (partition 2 args))
+        unique-keys (set keys)]
+    (if (= (count keys) (count unique-keys))
+      (apply hash-map args)
+      (let [duplicates (->> (frequencies keys)
+                            (remove #(> 2 (val %)))
+                            (map first))]
+        (throw
+         (IllegalArgumentException.
+          (format "Duplicate keys: %s"
+                  (clojure.string/join ", " duplicates))))))))
+
+(defmacro defproject [project-name version & args]
+  `(def ~'simple-lein-project
+     ~(unquote-project (argument-list->argument-map args))))
+
 (defn read-raw-project
+  ([]
+   (read-raw-project "project.clj"))
+  ([file]
+   (locking read-project
+     (binding [*ns* (find-ns 'simple-lein-profile-merge.core)]
+       (try (load-file file)
+            (catch Exception e
+              (throw (Exception. (format "Error loading %s" file) e)))))
+     (let [project
+           (resolve 'simple-lein-profile-merge.core/simple-lein-project)]
+       (when-not project
+         (throw (Exception. (format "%s must define project map" file))))
+       ;; return it to original state
+       (ns-unmap 'simple-lein-profile-merge.core 'validate-project)
+       @project))))
+
+#_(read-raw-project "sample.project.clj")
+
+#_(defn read-raw-project
   ([] (read-raw-project
        (io/file
         (System/getProperty "user.dir")
