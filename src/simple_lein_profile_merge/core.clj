@@ -277,41 +277,49 @@
   `(def ~'simple-lein-project
      ~(unquote-project (argument-list->argument-map args))))
 
-(defn read-raw-project
-  ([]
-   (read-raw-project "project.clj"))
-  ([file]
-   (locking read-project
-     (binding [*ns* (find-ns 'simple-lein-profile-merge.core)]
-       (try (load-file file)
-            (catch Exception e
-              (throw (Exception. (format "Error loading %s" file) e)))))
-     (let [project
-           (resolve 'simple-lein-profile-merge.core/simple-lein-project)]
-       (when-not project
-         (throw (Exception. (format "%s must define project map" file))))
-       ;; return it to original state
-       (ns-unmap 'simple-lein-profile-merge.core 'validate-project)
-       @project))))
 
-#_(read-raw-project "sample.project.clj")
-
-#_(defn read-raw-project
-  ([] (read-raw-project
+(defn read-raw-project-data
+  ([] (read-raw-project-data
        (io/file
         (System/getProperty "user.dir")
         "project.clj")))
   ([project-file]
    (if (.exists (io/file project-file))
-     (->> (str "[" (slurp project-file) "]")
+     (->> (str "[" (slurp project-file) "\n]")
           read-string
-          (filter #(= 'defproject (first %)))
+          (filter #(and (sequential? %)
+                        (= 'defproject (first %))))
           first
           (drop 3)
           (partition 2)
           (map vec)
           (into {}))
      {})))
+
+(defn read-raw-project
+  ([]
+   (read-raw-project "project.clj"))
+  ([file]
+   (try
+     (locking read-raw-project
+       (binding [*ns* (find-ns 'simple-lein-profile-merge.core)]
+         (try (load-file file)
+              (catch Exception e
+                (throw (Exception. (format "Error loading %s" file) e)))))
+       (let [project
+             (resolve 'simple-lein-profile-merge.core/simple-lein-project)]
+         (when-not project
+           (throw (Exception. (format "%s must define project map" file))))
+         ;; return it to original state
+         (ns-unmap 'simple-lein-profile-merge.core 'validate-project)
+         @project))
+     ;; it si very possible that a working project.clj will fail to load in this environment
+     ;; as this env is different
+     ;; fallback to a literal reading of the data
+     (catch Exception e
+       (read-raw-project-data file)))))
+
+#_(read-raw-project "sample.project.clj")
 
 (defn apply-lein-profiles [raw-project profile-names]
   (let [profiles (pull-together-profiles raw-project)]
