@@ -296,6 +296,16 @@
           (into {}))
      {})))
 
+;; The use case for this method and library is to read lein configuration data
+;; outside the lein environment.
+
+;; This is problematic for many reasons but in most cases it is possible...
+
+;; below is a two tier approach to reading the data... First read it
+;; in the same manner as lein and if that fails, fall back to just
+;; reading the key value data data that is in the list that starts with
+;; 'defproject 
+
 (defn read-raw-project
   ([]
    (read-raw-project "project.clj"))
@@ -313,10 +323,12 @@
          ;; return it to original state
          (ns-unmap 'simple-lein-profile-merge.core 'validate-project)
          @project))
-     ;; it si very possible that a working project.clj will fail to load in this environment
+     ;; it is very possible that a working project.clj will fail to load in this environment
      ;; as this env is different
      ;; fallback to a literal reading of the data
      (catch Exception e
+       (println (.getMessage e))
+       (println "Simple Lein Merge: falling back to reading raw data in" file)
        (read-raw-project-data file)))))
 
 #_(read-raw-project "sample.project.clj")
